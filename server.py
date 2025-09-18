@@ -185,9 +185,6 @@ def notion_webhook():
 
     # якщо це перевірочний запит від Notion — повертаємо challenge
     if "challenge" in body:
-        # (опційно перевіряємо підпис; якщо секрет задано і підпис не сходиться — 401)
-        if NOTION_VERIFY_SECRET and not check_notion_signature(request):
-            return jsonify({"ok": False, "error": "bad signature"}), 401
         return jsonify({"challenge": body["challenge"]}), 200
 
         # звичайні івенти – спочатку валідую підпис
