@@ -42,7 +42,8 @@ def check_notion_signature(req) -> bool:
     (деякі клієнти можуть додавати префікс 'sha256=').
     """
     if not NOTION_VERIFY_SECRET or NOTION_VERIFY_SECRET == 'dev-local':
-        app.logger.warning("WARN: Skipping signature check because NOTION_VERIFY_SECRET is not set or is 'dev-local'. This should be updated after verification.")
+        # Завжди пропускаємо перевірку, якщо ми на етапі верифікації
+        print("WARN: Skipping signature check because NOTION_VERIFY_SECRET is not set or is 'dev-local'. This should be updated after verification.")
         return True
 
     raw = req.get_data()  # читаємо сире тіло без cache=False
@@ -191,9 +192,8 @@ def notion_webhook():
         token = (request.headers.get("X-Notion-Verification-Token")
              or body.get("verificationToken")
              or body.get("verification_token"))
-        app.logger.info(f"[Notion Verify] token={token}")
-
-    # Повертаємо challenge як вимагає Notion
+        print(f"[Notion Verify] token={token}")
+        # Повертаємо challenge як вимагає Notion
         return jsonify({"challenge": body["challenge"]}), 200
     
         # звичайні івенти – спочатку валідую підпис
