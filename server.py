@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# Ця функція тимчасово допоможе отримати твій Chat ID
 @app.post("/notion/webhook")
 def notion_webhook():
     raw = request.get_data()
@@ -17,11 +18,13 @@ def notion_webhook():
              or body.get("verificationToken")
              or body.get("verification_token"))
         
+        # Виводимо токен в лог (про всяк випадок)
         print(f"!!! NOTION VERIFY TOKEN: {token} !!!")
         
         return jsonify({"challenge": body["challenge"]}), 200
 
     return jsonify({"ok": True}), 200
+
 
 @app.get("/")
 def health():
