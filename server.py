@@ -151,26 +151,20 @@ def handle_page_updated_event(evt: dict):
 
 @app.post("/notion/webhook")
 def notion_webhook():
-    # парсимо сире тіло, щоб зловити challenge і уникнути побічних ефектів cache=False
     raw = request.get_data()
     try:
         body = json.loads(raw.decode("utf-8") or "{}")
     except Exception:
         body = {}
-
-    # якщо це перевірочний запит від Notion — повертаємо challenge
     if "challenge" in body:
-    # зчитаємо одноразовий токен, щоб показати його в логах
-        token = (request.headers.get("X-Notion-Verification-Token")
-             or body.get("verificationToken")
-             or body.get("verification_token"))
+        token = (request.headers.get("X-Notion-Verification-Token") or body.get("verificationToken") or body.get("verification_token"))
         print(f"[Notion Verify] token={token}")
-        # Повертаємо challenge як вимагає Notion
         return jsonify({"challenge": body["challenge"]}), 200
+
+    # тут іде решта коду
     
         # звичайні івенти – тут перевірка підпису відключена
-    # if not check_notion_signature(request):
-    #     return jsonify({"ok": False, "error": "bad signature"}), 401
+  
 
     events = body.get("events") or [body]  # іноді приходить масив, іноді один
     for e in events:
