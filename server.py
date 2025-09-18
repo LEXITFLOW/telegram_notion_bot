@@ -41,7 +41,8 @@ def check_notion_signature(req) -> bool:
     hex(HMAC_SHA256(raw_body, NOTION_VERIFY_SECRET)).
     (деякі клієнти можуть додавати префікс 'sha256=').
     """
-    if not NOTION_VERIFY_SECRET:
+    if not NOTION_VERIFY_SECRET or NOTION_VERIFY_SECRET == 'dev-local':
+        app.logger.warning("WARN: Skipping signature check because NOTION_VERIFY_SECRET is not set or is 'dev-local'. This should be updated after verification.")
         return True
 
     raw = req.get_data()  # читаємо сире тіло без cache=False
@@ -191,17 +192,14 @@ def notion_webhook():
              or body.get("verificationToken")
              or body.get("verification_token"))
         app.logger.info(f"[Notion Verify] token={token}")
+
+    # Повертаємо challenge як вимагає Notion
         return jsonify({"challenge": body["challenge"]}), 200
     
         # звичайні івенти – спочатку валідую підпис
-    # Завжди перевіряємо підпис, якщо секрет встановлено
-    # Якщо секрет 'dev-local' — помилку 401 не повертаємо, щоб пройти верифікацію
-    if NOTION_VERIFY_SECRET and NOTION_VERIFY_SECRET != 'dev-local':
-        if not check_notion_signature(request):
-            return jsonify({"ok": False, "error": "bad signature"}), 401
-    elif NOTION_VERIFY_SECRET == 'dev-local':
-        app.logger.warning("WARN: Skipping signature check because NOTION_VERIFY_SECRET is 'dev-local'. This should be updated after verification.")
-    
+    if not check_notion_signature(request):
+        return jsonify({"ok": False, "error": "bad signature"}), 401
+
     events = body.get("events") or [body]  # іноді приходить масив, іноді один
     for e in events:
         etype = e.get("type") or e.get("event_type") or ""
