@@ -1,4 +1,4 @@
-import os, time, hmac, hashlib
+import os, time, hmac, hashlib, json
 from typing import List, Tuple
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
@@ -33,12 +33,32 @@ def pass_dedup(pk: str) -> bool:
     RECENT[pk] = now
     return True
 
-def verify_notion_signature(req) -> bool:
+def check_notion_signature(req) -> bool:
+
+    """
+    Notion надсилає підпис у X-Notion-Signature-256:
+    hex(HMAC_SHA256(raw_body, NOTION_VERIFY_SECRET)).
+    (деякі клієнти можуть додавати префікс 'sha256=').
+    """
     if not NOTION_VERIFY_SECRET:
         return True
-    sig = req.headers.get("X-Notion-Signature") or ""
-    raw = req.get_data(cache=False)
-    expected = "sha256=" + hmac.new(NOTION_VERIFY_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+
+    raw = req.get_data()  # читаємо сире тіло без cache=False
+
+    sig = (
+        req.headers.get("X-Notion-Signature-256")
+        or req.headers.get("X-Notion-Signature")  # fallback на старий заголовок
+        or ""
+    )
+    if sig.lower().startswith("sha256="):
+        sig = sig[7:]
+
+    expected = hmac.new(
+        NOTION_VERIFY_SECRET.encode("utf-8"),
+        raw,
+        hashlib.sha256,
+    ).hexdigest()
+
     return hmac.compare_digest(expected, sig)
 
 def tg_send(chat_id: int, text: str):
@@ -156,21 +176,34 @@ def handle_page_updated_event(evt: dict):
 
 @app.post("/notion/webhook")
 def notion_webhook():
-    if not verify_notion_signature(request):
+    # парсимо сире тіло, щоб зловити challenge і уникнути побічних ефектів cache=False
+    raw = request.get_data()
+    try:
+        body = json.loads(raw.decode("utf-8") or "{}")
+    except Exception:
+        body = {}
+
+    # якщо це перевірочний запит від Notion — повертаємо challenge
+    if "challenge" in body:
+        # (опційно перевіряємо підпис; якщо секрет задано і підпис не сходиться — 401)
+        if NOTION_VERIFY_SECRET and not check_notion_signature(request):
+            return jsonify({"ok": False, "error": "bad signature"}), 401
+        return jsonify({"challenge": body["challenge"]}), 200
+
+        # звичайні івенти – спочатку валідую підпис
+    if not check_notion_signature(request):
         return jsonify({"ok": False, "error": "bad signature"}), 401
 
-    body = request.get_json(force=True, silent=True) or {}
     events = body.get("events") or [body]  # іноді приходить масив, іноді один
     for e in events:
         etype = e.get("type") or e.get("event_type") or ""
-        # дві наші головні категорії:
         if "comment" in etype:
             handle_comment_event(e)
         elif "page" in etype and "updated" in etype:
             handle_page_updated_event(e)
-        # інші ігноруємо
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True}), 200
+
 
 @app.get("/")
 def health():
