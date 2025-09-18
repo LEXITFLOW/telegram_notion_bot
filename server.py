@@ -11,7 +11,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NOTION_TOKEN        = os.getenv("NOTION_TOKEN")
 BOT_USERS_DB_ID     = os.getenv("BOT_USERS_DB_ID")
 NOTION_VERIFY_SECRET= os.getenv("NOTION_VERIFY_SECRET", "")
-NOTION_VERIFICATION_TOKEN = os.getenv("NOTION_VERIFICATION_TOKEN", "")
 
 
 if not (TELEGRAM_BOT_TOKEN and NOTION_TOKEN and BOT_USERS_DB_ID):
@@ -187,10 +186,13 @@ def notion_webhook():
 
     # якщо це перевірочний запит від Notion — повертаємо challenge
     if "challenge" in body:
-        # токен може прийти у тілі або в хедері
-        token = body.get("verification_token") or request.headers.get("X-Notion-Verification-Token")
-        if NOTION_VERIFICATION_TOKEN and token != NOTION_VERIFICATION_TOKEN:
-             return jsonify({"ok": False, "error": "invalid verification token"}), 401
+    # зчитаємо одноразовий токен, щоб показати його в логах
+        token = (request.headers.get("X-Notion-Verification-Token")
+             or body.get("verificationToken")
+             or body.get("verification_token"))
+        app.logger.info(f"[Notion Verify] token={token}")
+
+    # Повертаємо challenge як вимагає Notion
         return jsonify({"challenge": body["challenge"]}), 200
     
         # звичайні івенти – спочатку валідую підпис
