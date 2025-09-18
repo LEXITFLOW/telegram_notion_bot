@@ -10,8 +10,6 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NOTION_TOKEN        = os.getenv("NOTION_TOKEN")
 BOT_USERS_DB_ID     = os.getenv("BOT_USERS_DB_ID")
-# NOTION_VERIFY_SECRET= os.getenv("NOTION_VERIFY_SECRET", "")
-# Цей рядок ми тепер не використовуємо
 
 if not (TELEGRAM_BOT_TOKEN and NOTION_TOKEN and BOT_USERS_DB_ID):
     raise RuntimeError("Перевір .env: TELEGRAM_BOT_TOKEN, NOTION_TOKEN, BOT_USERS_DB_ID")
@@ -34,8 +32,6 @@ def pass_dedup(pk: str) -> bool:
     RECENT[pk] = now
     return True
 
-# check_notion_signature() ми також видаляємо, щоб уникнути конфлікту
-
 def tg_send(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": False}
@@ -45,7 +41,6 @@ def tg_send(chat_id: int, text: str):
 
 def get_page_title_url(page_id: str) -> Tuple[str, str]:
     page = notion.pages.retrieve(page_id=page_id)
-    # шукаємо title
     title = ""
     for _, prop in (page.get("properties") or {}).items():
         if prop.get("type") == "title" and prop.get("title"):
@@ -76,7 +71,6 @@ def find_bot_user_chat_by_email(email: str) -> int | None:
 
 def emails_for_notion_user_ids(user_ids: List[str]) -> List[str]:
     emails = []
-    # витягуємо по одному (users.list не має фільтра по id, але users.retrieve існує)
     for uid in user_ids:
         try:
             u = notion.users.retrieve(user_id=uid)
@@ -87,36 +81,29 @@ def emails_for_notion_user_ids(user_ids: List[str]) -> List[str]:
     return emails
 
 def extract_mentions_from_rich_text(rich: list) -> List[str]:
-    # повертає список notion_user_id, згаданих у rich_text
     ids = []
     for r in rich or []:
         m = r.get("mention")
         if not m: 
-            # іноді Notion упаковує як {"type":"mention","mention":{"type":"user","user":{"id":...}}}
             if r.get("type") == "mention":
                 m = r.get("mention")
         if not m: 
-            # якщо є annotations але без mention — пропускаємо
             continue
         if m.get("type") == "user":
             u = m.get("user") or {}
             uid = u.get("id")
             if uid: ids.append(uid)
-    return list(dict.fromkeys(ids))  # унікальні з порядком
+    return list(dict.fromkeys(ids))
 
 def handle_comment_event(evt: dict):
-    # намагаємось дістати page_id і rich_text з payload
     page_id = (evt.get("parent") or {}).get("page_id") or (evt.get("context") or {}).get("page_id")
     if not page_id:
-        # фолбек: інколи є discussion.parent.page_id
         page_id = (evt.get("discussion") or {}).get("parent", {}).get("page_id")
     rich = evt.get("rich_text") or []
     mentioned_ids = extract_mentions_from_rich_text(rich)
     if not (page_id and mentioned_ids):
-        return  # нічого надсилати
-
+        return
     title, url = get_page_title_url(page_id)
-    # готуємо уривок коментаря (перші 200 символів plain_text)
     snippet = "".join((x.get("plain_text","") for x in rich))[:200]
     for uid in mentioned_ids:
         for email in emails_for_notion_user_ids([uid]):
@@ -129,11 +116,9 @@ def handle_comment_event(evt: dict):
             tg_send(chat, f"🔔 Тебе згадали в коментарі\n<b>{title}</b>\n{url}\n\n💬 {snippet}")
 
 def handle_page_updated_event(evt: dict):
-    # якщо payload містить rich_text з mentions (деякі вебхуки так роблять)
     page_id = (evt.get("page") or {}).get("id") or (evt.get("resource") or {}).get("id")
     if not page_id:
         return
-    # спроба знайти mentions у payload (спрощено). Якщо немає — можна пропустити або додати аудит.
     rich = evt.get("rich_text") or []
     mentioned_ids = extract_mentions_from_rich_text(rich)
     if not mentioned_ids:
@@ -157,25 +142,20 @@ def notion_webhook():
     except Exception:
         body = {}
     if "challenge" in body:
-        token = (request.headers.get("X-Notion-Verification-Token") or body.get("verificationToken") or body.get("verification_token"))
-        print(f"[Notion Verify] token={token}")
+        token = (request.headers.get("X-Notion-Verification-Token")
+             or body.get("verificationToken")
+             or body.get("verification_token"))
+        print(f"!!! NOTION VERIFY TOKEN: {token} !!!")
         return jsonify({"challenge": body["challenge"]}), 200
 
-    # тут іде решта коду
-    
-        # звичайні івенти – тут перевірка підпису відключена
-  
-
-    events = body.get("events") or [body]  # іноді приходить масив, іноді один
+    events = body.get("events") or [body]
     for e in events:
         etype = e.get("type") or e.get("event_type") or ""
         if "comment" in etype:
             handle_comment_event(e)
         elif "page" in etype and "updated" in etype:
             handle_page_updated_event(e)
-
     return jsonify({"ok": True}), 200
-
 
 @app.get("/")
 def health():
