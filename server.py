@@ -10,8 +10,8 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NOTION_TOKEN        = os.getenv("NOTION_TOKEN")
 BOT_USERS_DB_ID     = os.getenv("BOT_USERS_DB_ID")
-NOTION_VERIFY_SECRET= os.getenv("NOTION_VERIFY_SECRET", "")
-
+# NOTION_VERIFY_SECRET= os.getenv("NOTION_VERIFY_SECRET", "")
+# Цей рядок ми тепер не використовуємо
 
 if not (TELEGRAM_BOT_TOKEN and NOTION_TOKEN and BOT_USERS_DB_ID):
     raise RuntimeError("Перевір .env: TELEGRAM_BOT_TOKEN, NOTION_TOKEN, BOT_USERS_DB_ID")
@@ -34,35 +34,7 @@ def pass_dedup(pk: str) -> bool:
     RECENT[pk] = now
     return True
 
-def check_notion_signature(req) -> bool:
-
-    """
-    Notion надсилає підпис у X-Notion-Signature-256:
-    hex(HMAC_SHA256(raw_body, NOTION_VERIFY_SECRET)).
-    (деякі клієнти можуть додавати префікс 'sha256=').
-    """
-    if not NOTION_VERIFY_SECRET or NOTION_VERIFY_SECRET == 'dev-local':
-        # Завжди пропускаємо перевірку, якщо ми на етапі верифікації
-        print("WARN: Skipping signature check because NOTION_VERIFY_SECRET is not set or is 'dev-local'. This should be updated after verification.")
-        return True
-
-    raw = req.get_data()  # читаємо сире тіло без cache=False
-
-    sig = (
-        req.headers.get("X-Notion-Signature-256")
-        or req.headers.get("X-Notion-Signature")  # fallback на старий заголовок
-        or ""
-    )
-    if sig.lower().startswith("sha256="):
-        sig = sig[7:]
-
-    expected = hmac.new(
-        NOTION_VERIFY_SECRET.encode("utf-8"),
-        raw,
-        hashlib.sha256,
-    ).hexdigest()
-
-    return hmac.compare_digest(expected, sig)
+# check_notion_signature() ми також видаляємо, щоб уникнути конфлікту
 
 def tg_send(chat_id: int, text: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -196,9 +168,9 @@ def notion_webhook():
         # Повертаємо challenge як вимагає Notion
         return jsonify({"challenge": body["challenge"]}), 200
     
-        # звичайні івенти – спочатку валідую підпис
-    if not check_notion_signature(request):
-        return jsonify({"ok": False, "error": "bad signature"}), 401
+        # звичайні івенти – тут перевірка підпису відключена
+    # if not check_notion_signature(request):
+    #     return jsonify({"ok": False, "error": "bad signature"}), 401
 
     events = body.get("events") or [body]  # іноді приходить масив, іноді один
     for e in events:
