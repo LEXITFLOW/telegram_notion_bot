@@ -1,17 +1,8 @@
 # server.py
 from flask import Flask, request, jsonify
-import os, json, datetime
+import os, datetime
 
 app = Flask(__name__)
-
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-LOG_FILE = os.path.join(DATA_DIR, "notion_webhook.log")
-TOKEN_FILE = os.path.join(DATA_DIR, "notion_token.txt")
-os.makedirs(DATA_DIR, exist_ok=True)
-
-def append_line(path, text):
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
 
 @app.route("/notion/webhook", methods=["POST"])
 def notion_webhook():
@@ -24,23 +15,18 @@ def notion_webhook():
     # 2) Заголовок із верифікаційним токеном
     vtoken = request.headers.get("X-Notion-Verification-Token", "")
 
-    # 3) Логуємо все в один файл
-    append_line(LOG_FILE, json.dumps({
-        "ts": now,
-        "headers": {"X-Notion-Verification-Token": vtoken},
-        "payload": payload
-    }, ensure_ascii=False))
+    # 3) Виводимо у лог Render
+    print("=" * 40)
+    print(f"[{now}] Запит від Notion")
+    print(f"Verification token: {vtoken}")
+    print(f"Challenge: {challenge}")
+    print(f"Повний payload: {payload}")
+    print("=" * 40)
 
-    # 4) Якщо прийшов токен — перезаписуємо окремий файл із поточним значенням
-    if vtoken:
-        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
-            f.write(vtoken)
-
-    # 5) Для стадії підтвердження Notion очікує повернення challenge
+    # 4) Для підтвердження Notion треба повернути challenge
     if challenge:
         return jsonify({"challenge": challenge}), 200
 
-    # 6) Для звичайних подій просто 200 OK
     return ("", 200)
 
 if __name__ == "__main__":
