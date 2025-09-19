@@ -1,34 +1,47 @@
-import os
-import json
+# server.py
 from flask import Flask, request, jsonify
+import os, json, datetime
 
 app = Flask(__name__)
 
-# Ця функція тимчасово допоможе отримати твій Chat ID
-@app.post("/notion/webhook")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+LOG_FILE = os.path.join(DATA_DIR, "notion_webhook.log")
+TOKEN_FILE = os.path.join(DATA_DIR, "notion_token.txt")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+def append_line(path, text):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(text + "\n")
+
+@app.route("/notion/webhook", methods=["POST"])
 def notion_webhook():
-    raw = request.get_data()
-    try:
-        body = json.loads(raw.decode("utf-8") or "{}")
-    except Exception:
-        body = {}
-    
-    if "challenge" in body:
-        token = (request.headers.get("X-Notion-Verification-Token")
-             or body.get("verificationToken")
-             or body.get("verification_token"))
-        
-        # Виводимо токен в лог (про всяк випадок)
-        print(f"!!! NOTION VERIFY TOKEN: {token} !!!")
-        
-        return jsonify({"challenge": body["challenge"]}), 200
+    now = datetime.datetime.utcnow().isoformat() + "Z"
 
-    return jsonify({"ok": True}), 200
+    # 1) Тіло запиту (challenge)
+    payload = request.get_json(silent=True) or {}
+    challenge = payload.get("challenge")
 
+    # 2) Заголовок із верифікаційним токеном
+    vtoken = request.headers.get("X-Notion-Verification-Token", "")
 
-@app.get("/")
-def health():
-    return "OK"
+    # 3) Логуємо все в один файл
+    append_line(LOG_FILE, json.dumps({
+        "ts": now,
+        "headers": {"X-Notion-Verification-Token": vtoken},
+        "payload": payload
+    }, ensure_ascii=False))
+
+    # 4) Якщо прийшов токен — перезаписуємо окремий файл із поточним значенням
+    if vtoken:
+        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+            f.write(vtoken)
+
+    # 5) Для стадії підтвердження Notion очікує повернення challenge
+    if challenge:
+        return jsonify({"challenge": challenge}), 200
+
+    # 6) Для звичайних подій просто 200 OK
+    return ("", 200)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 3000)))
