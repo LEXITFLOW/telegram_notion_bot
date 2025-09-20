@@ -137,10 +137,17 @@ def handle_page_updated_event(evt: dict):
 @app.post("/notion/webhook")
 def notion_webhook():
     raw = request.get_data(cache=False)
+     # тимчасовий детальний лог
+    try:
+        print("[NOTION] headers:", dict(request.headers))
+    except Exception:
+        pass
+    print("[NOTION] raw:", raw)
     try:
         body = json.loads(raw.decode("utf-8") or "{}")
     except Exception:
         body = {}
+    print("[NOTION] parsed:", body)
 
     # verification step
     if "challenge" in body:
