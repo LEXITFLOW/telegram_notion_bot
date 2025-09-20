@@ -136,30 +136,45 @@ def handle_page_updated_event(evt: dict):
 
 @app.post("/notion/webhook")
 def notion_webhook():
-    raw = request.get_data()
+    raw = request.get_data(cache=False)
     try:
         body = json.loads(raw.decode("utf-8") or "{}")
     except Exception:
         body = {}
-    if "challenge" in body:
-     token = (request.headers.get("X-Notion-Verification-Token")
-              or body.get("verificationToken")
-              or body.get("verification_token"))
-     admin_chat = int(os.getenv("TELEGRAM_CHAT_ID", "0") or "0")
-     if admin_chat:
-        tg_send(admin_chat, f"✅ Notion Verification Token:\n<code>{token or '—'}</code>")
-     else:
-        print(f"!!! NOTION VERIFY TOKEN: {token} !!!")
-     return jsonify({"challenge": body["challenge"]}), 200
 
+    # verification step
+    if "challenge" in body:
+        token = (
+            request.headers.get("X-Notion-Verification-Token")
+            or body.get("verificationToken")
+            or body.get("verification_token")
+        )
+
+        admin_chat = int(os.getenv("TELEGRAM_CHAT_ID", "0") or "0")
+        if admin_chat:
+            tg_send(
+                admin_chat,
+                f"✅ Notion Verification Token:\n<code>{token or '—'}</code>"
+            )
+        # завжди виводимо у лог, навіть якщо є TELEGRAM_CHAT_ID
+        print("=" * 60)
+        print("🔑 Notion verification token (скопіюй і встав у форму):")
+        print(token or "—")
+        print("=" * 60)
+
+        return jsonify({"challenge": body["challenge"]}), 200
+
+    # events
     events = body.get("events") or [body]
     for e in events:
-        etype = e.get("type") or e.get("event_type") or ""
+        etype = (e.get("type") or e.get("event_type") or "").lower()
         if "comment" in etype:
             handle_comment_event(e)
         elif "page" in etype and "updated" in etype:
             handle_page_updated_event(e)
+
     return jsonify({"ok": True}), 200
+
 
 @app.get("/")
 def health():
